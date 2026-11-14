@@ -20,7 +20,7 @@ services:
     image: localstack/localstack:latest
     environment:
       SERVICES: sqs
-      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-ls-REBuricA-PAYE-2278-qeWu-yUxaqEju44b9}
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-TOKEN ESTA AQUI}
     ports:
       - "4566:4566"
     healthcheck:
