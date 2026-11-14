@@ -77,7 +77,7 @@ scripts/            utilitários (criação das filas)
 ## Status
 
 - [x] Fase 0: fundação (projeto, Docker Compose, filas, lint, CI)
-- [ ] Fase 1: domínio (`Money`, `Wallet`, `WagerTransaction`, ledger)
+- [x] Fase 1: domínio (`Money`, `Wallet`, `WagerTransaction`, ledger)
 - [ ] Fase 2: schema e migrations
 - [ ] Fase 3: use case e concorrência
 - [ ] Fase 4: API HTTP
