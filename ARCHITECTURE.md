@@ -1,0 +1,3 @@
+ContentBasedDeduplication: "false": o broker não deduplica por conteúdo, então os testes de redelivery exercitam de verdade a inbox. Quem envia mensagens (inclusive seus testes) deve passar MessageDeduplicationId e MessageGroupId, e a walletId é uma boa escolha de grupo para manter a ordem por wallet.
+
+maxReceiveCount: 5: o redrive para a DLQ é feito pelo próprio SQS, e o consumer ainda precisa classificar erros de negócio, transitórios e permanentes.
