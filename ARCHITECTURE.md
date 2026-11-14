@@ -25,3 +25,34 @@ Wallet.open já começa com o saldo inicial e version = 1. A transação OPENING
 
 debit lança sempre InsufficientFundsError. Quem escolhe entre INSUFFICIENT_FUNDS (aposta) e REVERSAL_WOULD_OVERDRAW (reversão) é o caso de uso, conforme o kind. --
 
+Com bundler, a saída do nest build tem imports sem extensão e não roda direto no Node puro. Isso não afeta o projeto, porque a aplicação roda com bun src/main.ts (o Dockerfile já faz isso), mas evite node dist/main.js.
+
+A alternativa é manter nodenext e escrever .js em todos os imports relativos (from './money.js'). Funciona, mas polui o código sem ganho.
+
+-- Máquina de estados
+
+PENDING pode ir para qualquer outro status. PENDING_REFERENCE vai para PROCESSED, REJECTED ou FAILED, e também para ela mesma, porque o worker reprocessa e a referência pode continuar ausente.
+
+PROCESSED, REJECTED e FAILED são terminais: qualquer transição lança InvalidTransactionStateError, e o estado fica intacto. O teste percorre as 25 combinações.
+
+reject() só aceita códigos de negócio e fail() só aceita o código de infraestrutura, para o status nunca contradizer o código. --
+
+-- payloadHash 
+
+SHA-256 em hex sobre o JSON canônico (chaves ordenadas em todos os níveis, sem espaços, undefined omitido) dos campos de negócio.
+
+O header Idempotency-Key, o instante de criação e os metadados de transporte ficam de fora.
+
+O valor passa por Money, então "25" e "25.00" geram o mesmo hash.
+
+O create calcula o hash sozinho, então não há como ele ficar inconsistente com os campos. --
+
+-- Regras de criação
+
+OPENING é rejeitado em create, e existe createOpening separado para o POST /wallets.
+
+REFUND e ROLLBACK exigem referência, BET não pode ter, e WIN e LOSS têm referência opcional.
+
+Valor zero só é aceito em LOSS, e isso é uma interpretação minha: um WIN de zero iria contra a regra da wallet de só movimentar valores positivos. --
+
+checkReference devolve o FailureCode da primeira violação: REFERENCE_MISMATCH (provider, player, wallet, rodada ou moeda), depois INVALID_REFERENCE_KIND e por fim AMOUNT_MISMATCH. Ele não olha o status da referência nem se ela já foi revertida, porque isso depende de estado persistido.

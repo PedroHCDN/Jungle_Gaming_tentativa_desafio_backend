@@ -53,3 +53,21 @@ export class InsufficientFundsError extends DomainError {
     super(`Insufficient funds: balance ${balance}, requested ${requested}`);
   }
 }
+
+/** Dados inválidos na criação/uso de uma WagerTransaction (erro de programação ou de contrato). */
+export class InvalidTransactionError extends DomainError {
+  readonly code = 'INVALID_TRANSACTION';
+
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+/** Transição de status proibida (ex.: tentar mudar uma transação terminal). Erro de programação. */
+export class InvalidTransactionStateError extends DomainError {
+  readonly code = 'INVALID_TRANSACTION_STATE';
+
+  constructor(from: string, to: string) {
+    super(`Invalid transaction status transition: ${from} -> ${to}`);
+  }
+}

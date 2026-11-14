@@ -3,19 +3,19 @@ import {
   GetQueueAttributesCommand,
   ListQueuesCommand,
   SQSClient,
-} from "@aws-sdk/client-sqs";
+} from '@aws-sdk/client-sqs';
 
-const endpoint = process.env.SQS_ENDPOINT ?? "http://localhost:4566";
-const region = process.env.AWS_REGION ?? "us-east-1";
-const maxReceiveCount = process.env.SQS_MAX_RECEIVE_COUNT ?? "5";
+const endpoint = process.env.SQS_ENDPOINT ?? 'http://localhost:4566';
+const region = process.env.AWS_REGION ?? 'us-east-1';
+const maxReceiveCount = process.env.SQS_MAX_RECEIVE_COUNT ?? '5';
 
-const MAIN_QUEUE = "wager-transactions.fifo";
-const DLQ = "wager-transactions-dlq.fifo";
+const MAIN_QUEUE = 'wager-transactions.fifo';
+const DLQ = 'wager-transactions-dlq.fifo';
 
 const client = new SQSClient({
   endpoint,
   region,
-  credentials: { accessKeyId: "test", secretAccessKey: "test" },
+  credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
 });
 
 async function waitForSqs(attempts = 30): Promise<void> {
@@ -39,30 +39,30 @@ async function main(): Promise<void> {
     new CreateQueueCommand({
       QueueName: DLQ,
       Attributes: {
-        FifoQueue: "true",
-        ContentBasedDeduplication: "false",
-        MessageRetentionPeriod: "1209600", // 14 dias
+        FifoQueue: 'true',
+        ContentBasedDeduplication: 'false',
+        MessageRetentionPeriod: '1209600', // 14 dias
       },
     }),
   );
-  if (!dlq.QueueUrl) throw new Error("DLQ criada sem QueueUrl");
+  if (!dlq.QueueUrl) throw new Error('DLQ criada sem QueueUrl');
 
   const dlqAttrs = await client.send(
     new GetQueueAttributesCommand({
       QueueUrl: dlq.QueueUrl,
-      AttributeNames: ["QueueArn"],
+      AttributeNames: ['QueueArn'],
     }),
   );
   const dlqArn = dlqAttrs.Attributes?.QueueArn;
-  if (!dlqArn) throw new Error("DLQ sem QueueArn");
+  if (!dlqArn) throw new Error('DLQ sem QueueArn');
 
   const main = await client.send(
     new CreateQueueCommand({
       QueueName: MAIN_QUEUE,
       Attributes: {
-        FifoQueue: "true",
-        ContentBasedDeduplication: "false",
-        VisibilityTimeout: "30",
+        FifoQueue: 'true',
+        ContentBasedDeduplication: 'false',
+        VisibilityTimeout: '30',
         RedrivePolicy: JSON.stringify({
           deadLetterTargetArn: dlqArn,
           maxReceiveCount,
