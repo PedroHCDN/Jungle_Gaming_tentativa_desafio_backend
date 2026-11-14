@@ -91,4 +91,4 @@ _A preencher na Fase 4._
 
 ## Decisões de arquitetura
 
-Veja [ARCHITECTURE.md](./ARCHITECTURE.md) _(a criar)_.
+Veja [ARCHITECTURE.md](./ARCHITECTURE.md).
