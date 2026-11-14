@@ -71,3 +71,12 @@ export class InvalidTransactionStateError extends DomainError {
     super(`Invalid transaction status transition: ${from} -> ${to}`);
   }
 }
+
+/** Lançamento de ledger com dados ou aritmética inconsistentes. */
+export class InvalidLedgerEntryError extends DomainError {
+  readonly code = 'INVALID_LEDGER_ENTRY';
+
+  constructor(message: string) {
+    super(message);
+  }
+}
