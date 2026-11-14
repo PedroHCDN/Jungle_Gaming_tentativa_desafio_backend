@@ -1,132 +1,94 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Distributed Wagering Processor
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Serviço financeiro distribuído que processa transações de apostas
+(`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`) recebidas de múltiplos provedores,
+mantendo saldo e ledger consistentes sob duplicidade, desordem e concorrência.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Desafio técnico da Jungle Gaming. Stack: Bun, TypeScript (strict), NestJS,
+MikroORM, PostgreSQL e AWS SQS (LocalStack).
 
-## Description
+## Requisitos
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- [Bun](https://bun.sh) 1.x
+- Docker Desktop (no Windows, com o backend WSL2 ligado)
+- Conta gratuita no [LocalStack](https://localstack.cloud) para obter o
+  `LOCALSTACK_AUTH_TOKEN`, que a imagem atual exige
 
-## Project setup
+## Primeiros passos
 
 ```bash
-$ bun install
+bun install
+cp .env.example .env      # PowerShell: Copy-Item .env.example .env
+# edite o .env e preencha LOCALSTACK_AUTH_TOKEN
+bun run infra:up          # sobe PostgreSQL + LocalStack e cria as filas
+bun run start:dev         # aplicação em modo watch
 ```
 
-## Compile and run the project
+O `.env` não deve ser commitado (já está no `.gitignore`).
+
+## Comandos
+
+| Comando | O que faz |
+| --- | --- |
+| `bun run start:dev` | Sobe a aplicação em modo watch |
+| `bun run build` | Compila o projeto |
+| `bun test` | Roda os testes |
+| `bun run lint` | Roda o ESLint |
+| `bunx tsc --noEmit` | Checa os tipos |
+| `bun run infra:up` | Sobe PostgreSQL e LocalStack e cria as filas SQS |
+| `bun run infra:down` | Derruba os containers |
+| `bun run infra:reset` | Derruba os containers e apaga os volumes |
+| `bun run queues:create` | Recria as filas (idempotente) |
+| `bun run migration:create` / `migration:up` / `migration:down` | Migrations |
+
+## Infraestrutura local
+
+| Serviço | Endereço | Observação |
+| --- | --- | --- |
+| PostgreSQL 16 | `localhost:5432` | usuário, senha e banco: `wagering` |
+| LocalStack (SQS) | `http://localhost:4566` | credenciais `test` / `test`, região `us-east-1` |
+
+Filas criadas por `scripts/create-queues.ts`:
+
+- `wager-transactions.fifo`: fila principal, com redrive para a DLQ após 5 recebimentos
+- `wager-transactions-dlq.fifo`: dead-letter queue
+
+As filas são FIFO com `ContentBasedDeduplication` desligado: quem publica deve
+informar `MessageDeduplicationId` e `MessageGroupId` (a `walletId` é o grupo).
+A deduplicação que importa é a da inbox no banco, não a do broker.
+
+Para subir várias instâncias da aplicação (necessário nos testes de concorrência):
 
 ```bash
-# development
-$ bun run start
-
-# watch mode
-$ bun run start:dev
-
-# production mode
-$ bun run start:prod
+docker compose --profile app up -d --build --scale app=3
 ```
 
-## Run tests
+## Estrutura do projeto
 
-```bash
-# unit tests
-$ bun run test
-
-# e2e tests
-$ bun run test:e2e
-
-# test coverage
-$ bun run test:cov
+```
+src/
+  domain/           regras e invariantes (sem NestJS nem ORM)
+  application/      casos de uso
+  infrastructure/   persistência, SQS, outbox
+  interfaces/       HTTP e consumers
+scripts/            utilitários (criação das filas)
 ```
 
-## Deployment
+## Status
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+- [x] Fase 0: fundação (projeto, Docker Compose, filas, lint, CI)
+- [ ] Fase 1: domínio (`Money`, `Wallet`, `WagerTransaction`, ledger)
+- [ ] Fase 2: schema e migrations
+- [ ] Fase 3: use case e concorrência
+- [ ] Fase 4: API HTTP
+- [ ] Fase 5: SQS, outbox e workers
+- [ ] Fase 6: testes de integração e concorrência
+- [ ] Fase 7: observabilidade
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## API
 
-```bash
-$ bun install -g @nestjs/mau
-$ mau deploy
-```
+_A preencher na Fase 4._
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Decisões de arquitetura
 
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project, run this and approve the code it prints at [observe.nestjs.com/link](https://observe.nestjs.com/link) - signing up for free if you have no account:
-
-```bash
-$ npx @nestjs/observe link
-```
-
-It installs `@nestjs/observe`, wires it into `AppModule` and `main.ts`, and writes the app key and secret into `.env`, which every `nest start` script (`start`, `start:dev`, `start:debug`) then loads. In production, set `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in the environment instead.
-
-Or do it by hand:
-
-```bash
-$ bun install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/sdk) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Veja [ARCHITECTURE.md](./ARCHITECTURE.md) _(a criar)_.
