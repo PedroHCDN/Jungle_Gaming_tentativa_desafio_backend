@@ -25,27 +25,28 @@ bun run start:dev         # aplicação em modo watch
 ```
 
 O `.env` não deve ser commitado (já está no `.gitignore`).
+Para.env.example: copie .env.example para .env e preencha
 
 ## Comandos
 
-| Comando | O que faz |
-| --- | --- |
-| `bun run start:dev` | Sobe a aplicação em modo watch |
-| `bun run build` | Compila o projeto |
-| `bun test` | Roda os testes |
-| `bun run lint` | Roda o ESLint |
-| `bunx tsc --noEmit` | Checa os tipos |
-| `bun run infra:up` | Sobe PostgreSQL e LocalStack e cria as filas SQS |
-| `bun run infra:down` | Derruba os containers |
-| `bun run infra:reset` | Derruba os containers e apaga os volumes |
-| `bun run queues:create` | Recria as filas (idempotente) |
-| `bun run migration:create` / `migration:up` / `migration:down` | Migrations |
+| Comando                                                        | O que faz                                        |
+| -------------------------------------------------------------- | ------------------------------------------------ |
+| `bun run start:dev`                                            | Sobe a aplicação em modo watch                   |
+| `bun run build`                                                | Compila o projeto                                |
+| `bun test`                                                     | Roda os testes                                   |
+| `bun run lint`                                                 | Roda o ESLint                                    |
+| `bunx tsc --noEmit`                                            | Checa os tipos                                   |
+| `bun run infra:up`                                             | Sobe PostgreSQL e LocalStack e cria as filas SQS |
+| `bun run infra:down`                                           | Derruba os containers                            |
+| `bun run infra:reset`                                          | Derruba os containers e apaga os volumes         |
+| `bun run queues:create`                                        | Recria as filas (idempotente)                    |
+| `bun run migration:create` / `migration:up` / `migration:down` | Migrations                                       |
 
 ## Infraestrutura local
 
-| Serviço | Endereço | Observação |
-| --- | --- | --- |
-| PostgreSQL 16 | `localhost:5432` | usuário, senha e banco: `wagering` |
+| Serviço          | Endereço                | Observação                                      |
+| ---------------- | ----------------------- | ----------------------------------------------- |
+| PostgreSQL 16    | `localhost:5432`        | usuário, senha e banco: `wagering`              |
 | LocalStack (SQS) | `http://localhost:4566` | credenciais `test` / `test`, região `us-east-1` |
 
 Filas criadas por `scripts/create-queues.ts`:
@@ -77,8 +78,8 @@ scripts/            utilitários (criação das filas)
 ## Status
 
 - [x] Fase 0: fundação (projeto, Docker Compose, filas, lint, CI)
-- [ ] Fase 1: domínio (`Money`, `Wallet`, `WagerTransaction`, ledger)
-- [ ] Fase 2: schema e migrations
+- [x] Fase 1: domínio (`Money`, `Wallet`, `WagerTransaction`, ledger)
+- [x] Fase 2: schema e migrations
 - [ ] Fase 3: use case e concorrência
 - [ ] Fase 4: API HTTP
 - [ ] Fase 5: SQS, outbox e workers
@@ -91,4 +92,4 @@ _A preencher na Fase 4._
 
 ## Decisões de arquitetura
 
-Veja [ARCHITECTURE.md](./ARCHITECTURE.md) _(a criar)_.
+Veja [ARCHITECTURE.md](./ARCHITECTURE.md).

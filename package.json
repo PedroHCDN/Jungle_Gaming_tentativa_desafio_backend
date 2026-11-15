@@ -9,8 +9,10 @@
   "scripts": {
     "start:dev": "bun run --watch src/main.ts",
     "build": "nest build",
-    "test": "bun test",
+    "test": "bun test src",
+    "test:int": "bun test test/integration",
     "lint": "eslint \"{src,test}/**/*.ts\"",
+    "db:migrate": "bun src/infrastructure/persistence/migrate.ts",
     "migration:create": "mikro-orm migration:create",
     "migration:up": "mikro-orm migration:up",
     "migration:down": "mikro-orm migration:down",
