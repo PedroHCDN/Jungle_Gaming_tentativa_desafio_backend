@@ -18,6 +18,7 @@ import {
 
 const t0 = new Date('2026-01-01T00:00:00.000Z');
 const t1 = new Date('2026-01-01T00:00:01.000Z');
+const retryAt = new Date('2026-01-01T00:00:02.000Z');
 const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });
 
 let seq = 0;
@@ -205,7 +206,7 @@ describe('máquina de estados', () => {
       case Status.Pending:
         break;
       case Status.PendingReference:
-        tx.markPendingReference();
+        tx.markPendingReference(retryAt);
         break;
       case Status.Processed:
         tx.markProcessed('internal-ref', t1);
@@ -224,7 +225,7 @@ describe('máquina de estados', () => {
     [Status.Pending]: () => {
       throw new Error('PENDING não é destino de nenhuma transição');
     },
-    [Status.PendingReference]: (tx) => tx.markPendingReference(),
+    [Status.PendingReference]: (tx) => tx.markPendingReference(retryAt),
     [Status.Processed]: (tx) => tx.markProcessed('internal-ref', t1),
     [Status.Rejected]: (tx) => tx.reject(FailureCode.ReferenceNotFound),
     [Status.Failed]: (tx) => tx.fail(FailureCode.PermanentInfrastructureError),
@@ -285,13 +286,78 @@ describe('transições: efeitos e validações', () => {
   });
 
   it('markPendingReference só vale para quem tem referência', () => {
-    expect(() => bet().markPendingReference()).toThrow(InvalidTransactionError);
+    expect(() => bet().markPendingReference(retryAt)).toThrow(
+      InvalidTransactionError,
+    );
     expect(() =>
       make({
         kind: Kind.Rollback,
         referenceExternalTransactionId: 'b',
-      }).markPendingReference(),
+      }).markPendingReference(retryAt),
     ).not.toThrow();
+  });
+
+  it('markPendingReference conta a tentativa e guarda quando reprocessar', () => {
+    const tx = make({
+      kind: Kind.Refund,
+      referenceExternalTransactionId: 'bet-x',
+    });
+    expect(tx.referenceAttempts).toBe(0);
+    expect(tx.nextAttemptAt).toBeUndefined();
+
+    tx.markPendingReference(retryAt);
+    expect(tx.status).toBe(Status.PendingReference);
+    expect(tx.referenceAttempts).toBe(1);
+    expect(tx.nextAttemptAt).toEqual(retryAt);
+
+    const later = new Date('2026-01-01T00:00:04.000Z');
+    tx.markPendingReference(later); // PENDING_REFERENCE -> PENDING_REFERENCE
+    expect(tx.referenceAttempts).toBe(2);
+    expect(tx.nextAttemptAt).toEqual(later);
+  });
+
+  it('sair de PENDING_REFERENCE limpa o nextAttemptAt (o banco exige)', () => {
+    const processed = make({
+      kind: Kind.Refund,
+      referenceExternalTransactionId: 'b',
+    });
+    processed.markPendingReference(retryAt);
+    processed.markProcessed('internal-ref', t1);
+    expect(processed.nextAttemptAt).toBeUndefined();
+    expect(processed.referenceAttempts).toBe(1);
+
+    const rejected = make({
+      kind: Kind.Win,
+      referenceExternalTransactionId: 'b',
+    });
+    rejected.markPendingReference(retryAt);
+    rejected.reject(FailureCode.ReferenceNotFound);
+    expect(rejected.nextAttemptAt).toBeUndefined();
+  });
+
+  it('rehydrate restaura as tentativas e o nextAttemptAt', () => {
+    const tx = make({ kind: Kind.Refund, referenceExternalTransactionId: 'b' });
+    tx.markPendingReference(retryAt);
+    const copy = WagerTransaction.rehydrate({
+      id: tx.id,
+      providerId: tx.providerId,
+      externalTransactionId: tx.externalTransactionId,
+      idempotencyKey: tx.idempotencyKey,
+      payloadHash: tx.payloadHash,
+      walletId: tx.walletId,
+      playerId: tx.playerId,
+      roundId: tx.roundId,
+      gameId: tx.gameId,
+      kind: tx.kind,
+      money: tx.money.toJSON(),
+      referenceExternalTransactionId: tx.referenceExternalTransactionId,
+      createdAt: tx.createdAt,
+      status: tx.status,
+      referenceAttempts: tx.referenceAttempts,
+      nextAttemptAt: tx.nextAttemptAt,
+    });
+    expect(copy.referenceAttempts).toBe(1);
+    expect(copy.nextAttemptAt).toEqual(retryAt);
   });
 
   it('reject grava o failureCode e exige código de negócio', () => {

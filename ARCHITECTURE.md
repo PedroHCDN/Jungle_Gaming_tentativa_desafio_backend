@@ -105,3 +105,96 @@ Repositories em SQL via em.execute, sem entities. Motivos: seq é GENERATED ALWA
 TransactionRunner e DbSession como fronteira de transação, definida pelo caso de uso.
 
 Os testes de concorrência: 25 apostas em saldo de 10, e a mesma aposta 10 vezes em paralelo.
+
+Travo a wallet antes de registrar a transação. O plano lista o INSERT primeiro. Fiz o contrário por dois motivos: uma wallet inexistente é detectada sem violar a FK, e a ordem “wallet primeiro” fica igual em todos os caminhos. O custo é que um replay também espera o lock por um instante.
+
+Mesmo external id com outra chave e mesmo payload é replay, não conflito, porque é o mesmo fato de negócio.
+
+walletBalance no resultado é o saldo atual da wallet, lido com ela travada. No replay de uma BET antiga, é o saldo de agora, não o da época.
+
+Player que não é dono da wallet lança PlayerWalletMismatchError e não persiste nada. Não existe failureCode para isso.
+
+Os outros kinds (WIN, LOSS, REFUND, ROLLBACK) lançam UnsupportedWagerKindError por enquanto. Os eventos já existem; o WalletBalanceChanged só é emitido quando o saldo muda.
+
+LOSS não gera lançamento nem WalletBalanceChanged, mas gera WagerTransactionProcessed.
+WIN não precisa ter o mesmo valor do BET referenciado. Só REFUND e ROLLBACK exigem valor igual.
+
+-- Um caso de uso, uma transação
+ProcessWagerTransactionUseCase atende HTTP e SQS e processa BET, WIN, LOSS, REFUND e ROLLBACK em uma única transação SQL. A ordem é:
+
+Travar a wallet.
+Registrar a mensagem na inbox, quando vem do SQS.
+Registrar a transação com INSERT … ON CONFLICT DO NOTHING.
+Avaliar as regras.
+Gravar ledger, saldo e status.
+Gravar os eventos na outbox.
+
+Qualquer falha desfaz tudo. A publicação da outbox é posterior ao commit --
+
+-- Estratégia de lock
+
+Lock pessimista por walletId, sem lock global.
+É FOR NO KEY UPDATE, não FOR UPDATE. O FOR UPDATE conflita com o FOR KEY SHARE que o INSERT de uma transação filha toma pela FK, e o teste de concorrência provocou um deadlock real (40P01).
+A wallet é travada antes do INSERT. Uma wallet inexistente é detectada sem violar a FK, e a ordem “wallet primeiro” é a mesma em todos os caminhos.
+Versão otimista e trigger de version + 1 são a segunda linha de defesa.
+Alternativa descartada: update atômico condicionado. É mais simples de ler, mas deixaria a regra de negócio espalhada no SQL.
+A ordem do ledger e da outbox depende de seq, que só é confiável com o lock-first. --
+
+-- Idempotência
+
+A chave é única por provider, não global.
+O payloadHash é SHA-256 sobre JSON canônico (chaves ordenadas), só com campos de negócio. O idempotencyKey e os metadados de transporte ficam de fora.
+Mesmo hash devolve o resultado original com idempotentReplay: true. Hash diferente devolve IdempotencyConflictError, que vira 409 na API (decisão sua).
+O mesmo external id com outra chave e o mesmo payload é o mesmo fato de negócio, então é replay. --
+
+-- Inbox (SQS)
+
+A deduplicação por (consumerName, messageId) fica na mesma transação do efeito.
+payload_hash detecta o mesmo messageId com conteúdo diferente.
+Erros permanentes (conflito de idempotência e de payload) devem ir para a DLQ. --
+
+-- Resolução da referência
+
+A busca é por (providerId, referenceExternalTransactionId).
+Checagens: provider, player, wallet, moeda, rodada, tipo e, nas reversões, valor igual (sem reversão parcial).
+A referência precisa estar PROCESSED. REJECTED ou FAILED vira REFERENCE_NOT_PROCESSED. --
+
+-- Regras por kind
+
+BET debita. WIN e REFUND creditam. ROLLBACK inverte o sentido da referência.
+WIN e LOSS têm referência opcional a um BET, e o valor do WIN não precisa ser igual ao do BET.
+LOSS não gera lançamento nem WalletBalanceChanged, mas gera WagerTransactionProcessed.
+Só uma reversão por referência (REFUND ou ROLLBACK), com ALREADY_REVERSED e um índice único parcial no banco. Isso é mais estrito que o “mesmo tipo” do README.
+Reversão que deixaria o saldo negativo vira REVERSAL_WOULD_OVERDRAW, distinto de INSUFFICIENT_FUNDS. --
+
+-- Referência ausente (PENDING_REFERENCE)
+
+A transação fica pendente com nextAttemptAt e emite WagerTransactionPendingReference uma vez.
+Política: 5 buscas com backoff exponencial a partir de 1 s (esperas de 1, 2, 4 e 8 s). Na 5ª falha vira REJECTED com REFERENCE_NOT_FOUND.
+retryPendingReference(transactionId) é o ponto de entrada do worker. Ele é idempotente e ignora o que não venceu ou já foi resolvido.
+O reprocessamento usa o mesmo evaluate da chegada nova, então as regras não divergem.
+Cadeias funcionam: um ROLLBACK de um REFUND pendente espera pelo REFUND. --
+
+-- Eventos (outbox)
+
+WagerTransactionProcessed, WagerTransactionRejected, WagerTransactionPendingReference e WalletBalanceChanged.
+O agregado é a wallet, e o envelope é versionado.
+Dinheiro viaja como string decimal. --
+
+-- Estratégia de testes
+Todos rodam contra PostgreSQL real, sem mock de banco. O relógio é injetável, então o backoff é testado sem esperar. Os principais testes:
+
+O cenário obrigatório: 100,00 e duas apostas de 80,00 simultâneas dão uma PROCESSED, uma REJECTED, saldo 20,00 e um único débito no ledger.
+30 envios simultâneos da mesma aposta dão um débito.
+15 REFUNDs simultâneos da mesma aposta dão um crédito.
+60 operações misturadas e embaralhadas mantêm saldo igual ao ledger.
+Atomicidade: se a outbox falha, tudo é desfeito.
+
+Mutações aplicadas: remover o lock, a checagem de payload, a de reversão já aplicada, o backoff exponencial, o esgotamento e a releitura sob lock fazem testes quebrar. --
+
+-- Limitações conhecidas
+
+A janela de 15 s é curta para produção. A política é injetável.
+Sem jitter, então muitos pendentes alinham os retries.
+O retry é por polling (Fase 5): quem espera uma referência não é acordado quando ela chega.
+Erros inesperados de overflow de saldo propagam como exceção. --

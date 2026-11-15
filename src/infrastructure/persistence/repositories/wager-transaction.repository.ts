@@ -12,6 +12,7 @@ import {
 import {
   amount,
   enumValue,
+  integer,
   optionalEnumValue,
   optionalText,
   optionalTimestamp,
@@ -23,7 +24,7 @@ import {
 const COLUMNS = `id, provider_id, external_transaction_id, idempotency_key, payload_hash,
   wallet_id, player_id, round_id, game_id, kind, amount, currency,
   reference_external_transaction_id, reference_transaction_id, status,
-  failure_code, processed_at, created_at`;
+  failure_code, processed_at, created_at, reference_attempts, next_attempt_at`;
 
 function toTransaction(row: Row): WagerTransaction {
   return WagerTransaction.rehydrate({
@@ -47,6 +48,8 @@ function toTransaction(row: Row): WagerTransaction {
     failureCode: optionalEnumValue(FailureCode, row, 'failure_code'),
     processedAt: optionalTimestamp(row, 'processed_at'),
     createdAt: timestamp(row, 'created_at'),
+    referenceAttempts: integer(row, 'reference_attempts'),
+    nextAttemptAt: optionalTimestamp(row, 'next_attempt_at'),
   });
 }
 
@@ -57,7 +60,7 @@ export class SqlWagerTransactionRepository implements WagerTransactionRepository
     // chave, o INSERT espera o commit dela e então devolve zero linhas.
     const inserted = await db.query<Row>(
       `INSERT INTO wager_transactions (${COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO NOTHING
        RETURNING id`,
       [
@@ -79,6 +82,8 @@ export class SqlWagerTransactionRepository implements WagerTransactionRepository
         tx.failureCode ?? null,
         tx.processedAt ?? null,
         tx.createdAt,
+        tx.referenceAttempts,
+        tx.nextAttemptAt ?? null,
       ],
     );
     return inserted.length > 0;
@@ -114,10 +119,12 @@ export class SqlWagerTransactionRepository implements WagerTransactionRepository
   }
 
   async saveTransition(db: DbSession, tx: WagerTransaction): Promise<void> {
-    // O banco recusa transições ilegais (triggers) mesmo que o domínio falhe.
+    // O banco recusa transições ilegais (triggers) mesmo que o domínio falhe, e
+    // exige next_attempt_at exatamente quando o status é PENDING_REFERENCE.
     const updated = await db.query<Row>(
       `UPDATE wager_transactions
-          SET status = ?, reference_transaction_id = ?, failure_code = ?, processed_at = ?
+          SET status = ?, reference_transaction_id = ?, failure_code = ?, processed_at = ?,
+              reference_attempts = ?, next_attempt_at = ?
         WHERE id = ?
         RETURNING id`,
       [
@@ -125,12 +132,27 @@ export class SqlWagerTransactionRepository implements WagerTransactionRepository
         tx.referenceTransactionId ?? null,
         tx.failureCode ?? null,
         tx.processedAt ?? null,
+        tx.referenceAttempts,
+        tx.nextAttemptAt ?? null,
         tx.id,
       ],
     );
     if (updated.length === 0) {
       throw new TransactionNotFoundError(tx.id);
     }
+  }
+
+  async findReversalOf(
+    db: DbSession,
+    referenceTransactionId: string,
+  ): Promise<WagerTransaction | undefined> {
+    // `reference_transaction_id` só é preenchido em PROCESSED, então isto acha
+    // reversões efetivamente aplicadas (o índice único parcial é a garantia final).
+    return this.findOne(
+      db,
+      `reference_transaction_id = ? AND kind IN ('REFUND', 'ROLLBACK')`,
+      [referenceTransactionId],
+    );
   }
 
   private async findOne(

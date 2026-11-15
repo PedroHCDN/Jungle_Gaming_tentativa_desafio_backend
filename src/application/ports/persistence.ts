@@ -1,6 +1,7 @@
 import type { WalletLedgerEntry } from '../../domain/ledger/wallet-ledger-entry';
 import type { WagerTransaction } from '../../domain/wagering/wager-transaction';
 import type { Wallet } from '../../domain/wallet/wallet';
+import type { IntegrationEvent } from '../events/integration-event';
 
 /**
  * Sessão de banco: dentro de `TransactionRunner.run` é a transação aberta;
@@ -79,7 +80,15 @@ export interface WagerTransactionRepository {
     providerId: string,
     idempotencyKey: string,
   ): Promise<WagerTransaction | undefined>;
-  /** Persiste status, referência resolvida, failureCode e processedAt. */
+  /** A reversão (REFUND/ROLLBACK) já aplicada sobre esta transação, se houver. */
+  findReversalOf(
+    db: DbSession,
+    referenceTransactionId: string,
+  ): Promise<WagerTransaction | undefined>;
+  /**
+   * Persiste status, referência resolvida, failureCode, processedAt e o estado
+   * de espera (tentativas e próxima tentativa).
+   */
   saveTransition(db: DbSession, transaction: WagerTransaction): Promise<void>;
 }
 
@@ -92,4 +101,36 @@ export interface LedgerRepository {
     db: DbSession,
     transactionId: string,
   ): Promise<WalletLedgerEntry | undefined>;
+}
+
+export interface OutboxRepository {
+  /**
+   * Grava o evento na outbox DENTRO da transação do efeito financeiro: ou os
+   * dois acontecem, ou nenhum. A publicação (depois do commit) é da Fase 5.
+   */
+  append(db: DbSession, event: IntegrationEvent): Promise<void>;
+}
+
+/** Identidade de uma mensagem de entrada (SQS): `(consumerName, messageId)` é única. */
+export interface InboxMessage {
+  consumerName: string;
+  messageId: string;
+  /** Hash do payload de negócio: detecta o mesmo messageId com conteúdo diferente. */
+  payloadHash: string;
+  receivedAt: Date;
+}
+
+export type InboxRegistration =
+  | { registered: true }
+  /** Já registrada antes: devolve o hash do payload que foi registrado. */
+  | { registered: false; payloadHash: string };
+
+export interface InboxRepository {
+  /**
+   * `INSERT … ON CONFLICT DO NOTHING` na transação do efeito. Como a linha só
+   * fica visível se o efeito foi commitado, "já registrada" significa "já
+   * processada". Entregas simultâneas da mesma mensagem esperam o commit da
+   * primeira (índice único) e então veem `registered: false`.
+   */
+  register(db: DbSession, message: InboxMessage): Promise<InboxRegistration>;
 }

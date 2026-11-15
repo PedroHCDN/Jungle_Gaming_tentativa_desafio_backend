@@ -4,6 +4,7 @@ import {
   InvalidTransactionError,
   InvalidTransactionStateError,
 } from '../shared/domain-error';
+import type { AttemptCount } from './attempt-count';
 import { FailureCode, isInfrastructureFailure } from './failure-code';
 import { computePayloadHash } from './payload-hash';
 import { WagerTransactionKind as Kind } from './wager-transaction-kind';
@@ -89,6 +90,10 @@ export interface WagerTransactionState {
   referenceTransactionId?: string;
   failureCode?: FailureCode;
   processedAt?: Date;
+  /** Quantas esperas por referência (PENDING_REFERENCE) já foram agendadas. */
+  referenceAttempts?: AttemptCount;
+  /** Só existe em PENDING_REFERENCE: quando reprocessar. */
+  nextAttemptAt?: Date;
 }
 
 export class WagerTransaction {
@@ -111,6 +116,8 @@ export class WagerTransaction {
     private _referenceTransactionId?: string,
     private _failureCode?: FailureCode,
     private _processedAt?: Date,
+    private _referenceAttempts: AttemptCount = 0,
+    private _nextAttemptAt?: Date,
   ) {}
 
   /**
@@ -165,6 +172,8 @@ export class WagerTransaction {
       state.referenceTransactionId,
       state.failureCode,
       state.processedAt,
+      state.referenceAttempts ?? 0,
+      state.nextAttemptAt,
     );
   }
 
@@ -276,6 +285,16 @@ export class WagerTransaction {
     return this._failureCode;
   }
 
+  /** Quantas esperas por referência já foram agendadas (a busca final, que esgota, não conta). */
+  get referenceAttempts(): AttemptCount {
+    return this._referenceAttempts;
+  }
+
+  /** Só definido em PENDING_REFERENCE. */
+  get nextAttemptAt(): Date | undefined {
+    return this._nextAttemptAt;
+  }
+
   get processedAt(): Date | undefined {
     return this._processedAt;
   }
@@ -296,11 +315,16 @@ export class WagerTransaction {
     }
     this.assertTransition(Status.Processed);
     this._status = Status.Processed;
+    this._nextAttemptAt = undefined;
     this._referenceTransactionId = referenceTransactionId;
     this._processedAt = at;
   }
 
-  markPendingReference(): void {
+  /**
+   * A referência ainda não existe: espera até `nextAttemptAt` e conta a
+   * tentativa. O banco exige `next_attempt_at` exatamente em PENDING_REFERENCE.
+   */
+  markPendingReference(nextAttemptAt: Date): void {
     if (
       !this.requiresReference() &&
       this.referenceExternalTransactionId === undefined
@@ -311,6 +335,8 @@ export class WagerTransaction {
     }
     this.assertTransition(Status.PendingReference);
     this._status = Status.PendingReference;
+    this._referenceAttempts += 1;
+    this._nextAttemptAt = nextAttemptAt;
   }
 
   /** Violação de regra de negócio. Terminal. */
@@ -322,6 +348,7 @@ export class WagerTransaction {
     }
     this.assertTransition(Status.Rejected);
     this._status = Status.Rejected;
+    this._nextAttemptAt = undefined;
     this._failureCode = code;
   }
 
@@ -334,6 +361,7 @@ export class WagerTransaction {
     }
     this.assertTransition(Status.Failed);
     this._status = Status.Failed;
+    this._nextAttemptAt = undefined;
     this._failureCode = code;
   }
 

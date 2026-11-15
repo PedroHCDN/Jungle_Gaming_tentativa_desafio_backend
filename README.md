@@ -80,7 +80,7 @@ scripts/            utilitários (criação das filas)
 - [x] Fase 0: fundação (projeto, Docker Compose, filas, lint, CI)
 - [x] Fase 1: domínio (`Money`, `Wallet`, `WagerTransaction`, ledger)
 - [x] Fase 2: schema e migrations
-- [ ] Fase 3: use case e concorrência
+- [x] Fase 3: use case e concorrência
 - [ ] Fase 4: API HTTP
 - [ ] Fase 5: SQS, outbox e workers
 - [ ] Fase 6: testes de integração e concorrência

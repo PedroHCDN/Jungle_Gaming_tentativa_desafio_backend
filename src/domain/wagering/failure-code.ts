@@ -18,7 +18,7 @@ export enum FailureCode {
   InvalidReferenceKind = 'INVALID_REFERENCE_KIND',
   /** Valor da reversão diferente do valor da referência (reversão parcial fora de escopo). */
   AmountMismatch = 'AMOUNT_MISMATCH',
-  /** A referência já foi revertida por esse mesmo tipo de operação. Não reenviar. */
+  /** A referência já foi revertida (por REFUND ou ROLLBACK: só uma reversão por referência). Não reenviar. */
   AlreadyReversed = 'ALREADY_REVERSED',
   /** Moeda da operação diferente da moeda da wallet. Corrigir o payload. */
   CurrencyMismatch = 'CURRENCY_MISMATCH',
