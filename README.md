@@ -5,7 +5,7 @@ Serviço financeiro distribuído que processa transações de apostas
 e mantém **saldo e ledger corretos** mesmo quando as mensagens chegam
 **duplicadas, fora de ordem ou ao mesmo tempo**.
 
-Desafio técnico da Jungle Gaming. Stack: Bun, TypeScript (strict), NestJS,
+Desafio técnico da Jungle Gaming: https://github.com/junglegaming/backend-challenge.git. Stack: Bun, TypeScript (strict), NestJS,
 MikroORM, PostgreSQL e AWS SQS (LocalStack).
 
 ## O que o projeto resolve
